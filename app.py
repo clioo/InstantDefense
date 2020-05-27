@@ -45,7 +45,11 @@ class InstantDefense:
         if data:
             keys = data[0].keys()
             with open(f'./results/{file_name}_results.csv', 'w') as output_file:
-                dict_writer = csv.DictWriter(output_file, keys)
+                dict_writer = csv.DictWriter(
+                    output_file,
+                    fieldnames=keys,
+                    lineterminator='\n'
+                )
                 dict_writer.writeheader()
                 dict_writer.writerows(data)
 
@@ -122,11 +126,14 @@ class InstantDefense:
         next_button_selector = 'input[type=submit]'
         sign_in_button_selector = 'input[type=submit]'
         mails_selector = 'div[role=option]'
-        body_mail_selector = 'div.wide-content-host > div > div + div > div'
+        body_mail_selector = 'div.wide-content-host > div > div + div > div table'
         # Let's read the last mail mail !
         self.driver.get(self.web_pages['outlook'])
         log_in_link = self._wait_until(log_in_link_selector)
         log_in_link.click()
+        tabs = self.driver.window_handles
+        if len(tabs) > 1:
+            self.driver.switch_to.window(tabs[1])
         email_input = self._wait_until(email_input_selector)
         email_input.send_keys(OUTLOOK_EMAIL)
         next_button = self._wait_until(next_button_selector)
@@ -137,11 +144,21 @@ class InstantDefense:
         sign_in_button.click()
         mail = self._wait_until(mails_selector)
         mail.click()
-        body_mail = self._wait_until(body_mail_selector).text
-        #Data has to be in that format.
-        data = [{'body': body_mail}]
+        body_mail = self._wait_until(body_mail_selector)
+        # reading rows
+        rows = body_mail.find_elements(By.TAG_NAME, 'tr')
+        keys = rows[0].find_elements(By.TAG_NAME, 'th')
+        # Removing header row
+        rows = rows[1:]
+        data = []
+        for row in rows:
+            cells = row.find_elements(By.TAG_NAME, 'td')
+            data_item = {}
+            for i, cell in enumerate(cells):
+                data_item[keys[i].text] = cell.text
+            data.append(data_item)
         self._export_to_csv(data, 'OCSDemail')
-        return body_mail
+        return data
     
 
     # Public methods
@@ -215,6 +232,7 @@ class InstantDefense:
                 new_search_button.click()
     
         self._write_config_file('last_bookin_success', last_bookin_success)
+        self._export_to_csv(output_names_birth_dates, 'DallasCounty')
         return output_names_birth_dates
 
     def sbcounty_booking_search(self):
@@ -239,8 +257,8 @@ class InstantDefense:
                 'name': name.text,
                 'age': age.text
             })
+        self._export_to_csv(output_names_ages, 'sbcounty')
         return output_names_ages
-        pass
 
     def quit_driver(self):
         """This closes chrome instance"""
