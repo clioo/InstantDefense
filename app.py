@@ -266,7 +266,7 @@ class InstantDefense:
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense(debug=True)
+    instant_defense = InstantDefense()
     try:
         execution = str(sys.argv[1])
     except:
