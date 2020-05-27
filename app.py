@@ -5,6 +5,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import json
 import sys
 import time
+import csv
 
 
 OUTLOOK_EMAIL = 'instant_defense1@outlook.com'
@@ -23,8 +24,6 @@ class InstantDefense:
             'dallascounty': 'https://www.dallascounty.org/jaillookup/search.jsp',
             'sbcounty': 'http://web.sbcounty.gov/sheriff/bookingsearch/bookingsearch.aspx'
         }
-        # Default wait time in seconds
-        debug = True
         if debug:
             # This will open the browser, just for debugging
             # purposes
@@ -41,6 +40,15 @@ class InstantDefense:
             self.driver = webdriver.Chrome(options=options)
 
     # Private methods
+    def _export_to_csv(self, data, file_name):
+        """Data must be an array of dictionaries so it can export it"""
+        if data:
+            keys = data[0].keys()
+            with open(f'./results/{file_name}_results.csv', 'w') as output_file:
+                dict_writer = csv.DictWriter(output_file, keys)
+                dict_writer.writeheader()
+                dict_writer.writerows(data)
+
     def _read_config_file(self, key, default=''):
         """Read data from json config file,
         if doesn't find it, returns a default value"""
@@ -106,6 +114,7 @@ class InstantDefense:
         self._wait_until(invalid_email_selector)
 
     def _read_last_email(self):
+        """This method returns the last email body you get in the email account"""
         # Locators
         log_in_link_selector = 'nav.auxiliary-actions > ul a.sign-in-link, div.c-group.links :nth-child(2) > a'
         email_input_selector = 'input[type=email]'
@@ -128,15 +137,21 @@ class InstantDefense:
         sign_in_button.click()
         mail = self._wait_until(mails_selector)
         mail.click()
-        body_mail = self._wait_until(body_mail_selector)
-        return body_mail.text
+        body_mail = self._wait_until(body_mail_selector).text
+        #Data has to be in that format.
+        data = [{'body': body_mail}]
+        self._export_to_csv(data, 'OCSDemail')
+        return body_mail
     
+
     # Public methods
     def ocsd_submit_read_mail(self):
         self._ocsd_submit()
-        self._read_last_email()
+        email_body = self._read_last_email()
+        return email_body
 
     def hcdistrictclerk_login(self):
+        """Just a login method"""
         self.driver.get(self.web_pages['hcdistrictclerk'])
         # Locators
         form_frame_locator = '#ctl00_ctl00_ctl00_TopLoginIFrame1_iFrameContent2'
@@ -228,24 +243,25 @@ class InstantDefense:
         pass
 
     def quit_driver(self):
+        """This closes chrome instance"""
         self.driver.quit()
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense(True)
+    instant_defense = InstantDefense(debug=True)
     try:
         execution = str(sys.argv[1])
     except:
         print('Not args given, executing all.')
         execution = 'all'
     if execution == 'ocsd':
-        instant_defense.ocsd_submit_read_mail()
+        print(instant_defense.ocsd_submit_read_mail())
     elif execution == 'hcdistrictclerk':
         instant_defense.hcdistrictclerk_login()
     elif execution == 'dallascounty':
-        instant_defense.dallascounty_bookin_search()
+        print(instant_defense.dallascounty_bookin_search())
     elif execution == 'sbcounty':
-        instant_defense.sbcounty_booking_search()
+        print(instant_defense.sbcounty_booking_search())
     elif execution == 'all':
         print('******************')
         print('Submiting form...')
