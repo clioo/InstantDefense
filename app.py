@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import json
+import sys
 import time
 
 
@@ -89,8 +90,7 @@ class InstantDefense:
             is_found = False
         return is_found
 
-    # Public methods
-    def ocsd_submit(self):
+    def _ocsd_submit(self):
         # Submit the form and read the sent email
         submit_button_selector = '#btnSearch'
         email_input_selector = '#txtEmail'
@@ -105,7 +105,7 @@ class InstantDefense:
         submit_button.click()
         self._wait_until(invalid_email_selector)
 
-    def read_last_email(self):
+    def _read_last_email(self):
         # Locators
         log_in_link_selector = 'nav.auxiliary-actions > ul a.sign-in-link, div.c-group.links :nth-child(2) > a'
         email_input_selector = 'input[type=email]'
@@ -130,6 +130,11 @@ class InstantDefense:
         mail.click()
         body_mail = self._wait_until(body_mail_selector)
         return body_mail.text
+    
+    # Public methods
+    def ocsd_submit_read_mail(self):
+        self._ocsd_submit()
+        self._read_last_email()
 
     def hcdistrictclerk_login(self):
         self.driver.get(self.web_pages['hcdistrictclerk'])
@@ -222,20 +227,41 @@ class InstantDefense:
         return output_names_ages
         pass
 
+    def quit_driver(self):
+        self.driver.quit()
+
 
 if __name__ == '__main__':
     instant_defense = InstantDefense(True)
-    #ocsd
-    instant_defense.ocsd_submit()
-    instant_defense.read_last_email()
-
-    #hcdistrictclerk
-    instant_defense.hcdistrictclerk_login()
-
-    #dallascounty bookin search
-    instant_defense.dallascounty_bookin_search()
-    
-    #sbcounty bypass
-    instant_defense.sbcounty_booking_search()
-
-    instant_defense.driver.quit()
+    try:
+        execution = str(sys.argv[1])
+    except:
+        print('Not args given, executing all.')
+        execution = 'all'
+    if execution == 'ocsd':
+        instant_defense.ocsd_submit_read_mail()
+    elif execution == 'hcdistrictclerk':
+        instant_defense.hcdistrictclerk_login()
+    elif execution == 'dallascounty':
+        instant_defense.dallascounty_bookin_search()
+    elif execution == 'sbcounty':
+        instant_defense.sbcounty_booking_search()
+    elif execution == 'all':
+        print('******************')
+        print('Submiting form...')
+        print('Reading email...')
+        print(instant_defense.ocsd_submit_read_mail())
+        print('Login to hcdistrictclerk.')
+        instant_defense.hcdistrictclerk_login()
+        print('Dallascounty bookin search.')
+        print(instant_defense.dallascounty_bookin_search())
+        print('Sbcounty list search')
+        print(instant_defense.sbcounty_booking_search())
+    else:
+        print('Invalid method, see the valid ones:')
+        print('ocsd')
+        print('hcdistrictclerk')
+        print('dallascounty')
+        print('sbcounty')
+        print('all')
+    instant_defense.quit_driver()
