@@ -38,7 +38,6 @@ class InstantDefense:
             options.add_argument('--window-size=1920x1080')
             self.driver = webdriver.Chrome(options=options)
  
-
     # Private methods
     def _export_to_csv(self, data, file_name):
         """Data must be an array of dictionaries so it can export it"""
