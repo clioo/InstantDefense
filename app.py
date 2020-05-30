@@ -193,6 +193,7 @@ class InstantDefense:
     def ocsd_submit_read_mail(self):
         """Submits OCSD form and read data from a IMAP account"""
         self._ocsd_submit()
+        print('Reading email...')
         email_body = self._get_last_imap_emails()
         soup = BeautifulSoup(email_body)
         data = self._bs4_get_data_from_table(soup)
@@ -302,7 +303,7 @@ class InstantDefense:
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense(True)
+    instant_defense = InstantDefense()
     try:
         execution = str(sys.argv[1])
     except:
@@ -318,8 +319,7 @@ if __name__ == '__main__':
         print(instant_defense.sbcounty_booking_search())
     elif execution == 'all':
         print('******************')
-        print('Submiting form...')
-        print('Reading email...')
+        print('Submitting form...')
         print(instant_defense.ocsd_submit_read_mail())
         print('Login to hcdistrictclerk.')
         instant_defense.hcdistrictclerk_login()
