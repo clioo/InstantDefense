@@ -2,16 +2,15 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from datetime import timezone
+from imap_tools import MailBox, Q
+from bs4 import BeautifulSoup
+import imaplib, email
 import json
 import sys
 import time
 import csv
-
-
-OUTLOOK_EMAIL = 'instant_defense1@outlook.com'
-OUTLOOK_PASSWORD = 'yNY9n2PHs*Tu#Sp)'
-HCDISTRICTCLERK_EMAIL = 'pkaster@usc.edu'
-HCDISTRICTCLERK_PASSWORD = 'yNY9n2PHs*Tu#Sp)'
+import datetime
 
 
 class InstantDefense:
@@ -38,6 +37,7 @@ class InstantDefense:
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--window-size=1920x1080')
             self.driver = webdriver.Chrome(options=options)
+ 
 
     # Private methods
     def _export_to_csv(self, data, file_name):
@@ -71,6 +71,16 @@ class InstantDefense:
             json.dump(data, config_file)
             config_file.truncate()
 
+    def _get_last_imap_emails(self):
+        """Gets the last emails from inbox"""
+        email = self._read_config_file('email')
+        password = self._read_config_file('password')
+        imap_url = self._read_config_file('imap_url')
+        with MailBox(imap_url).login(email, password, 'INBOX') as mailbox:
+            mails = [msg for msg in mailbox.fetch(Q(all=True))]
+            latest_email = mails[-1]
+        return latest_email.html
+
     def _wait_until(self, query, by=By.CSS_SELECTOR, until=EC.element_to_be_clickable, wait_time=30):
         """generic wait until class with default csss selector and
         element to be clickable"""
@@ -103,6 +113,7 @@ class InstantDefense:
         return is_found
 
     def _ocsd_submit(self):
+        email = self._read_config_file('email')
         # Submit the form and read the sent email
         submit_button_selector = '#btnSearch'
         email_input_selector = '#txtEmail'
@@ -112,13 +123,31 @@ class InstantDefense:
         submit_button = self._wait_until(submit_button_selector)
         submit_button.click()
         email_input = self._wait_until(email_input_selector)
-        email_input.send_keys(OUTLOOK_EMAIL)
+        email_input.send_keys(email)
         submit_button = self._wait_until(submit_button_selector)
         submit_button.click()
         self._wait_until(invalid_email_selector)
 
+    def _bs4_get_data_from_table(self, soup):
+        """This method only works for beautiful soup 4 and parses a html table
+        to an list of dictionaries"""
+        rows = soup.select('tr')
+        headers = rows[0].select('th')
+        rows = rows[1:]
+        data = []
+        for row in rows:
+            cells = row.select('td')
+            data_item = {}
+            for i, cell in enumerate(cells):
+                key = headers[i].get_text()
+                data_item[key] = cell.get_text()
+            data.append(data_item)
+        return data
+
     def _read_last_email(self):
         """This method returns the last email body you get in the email account"""
+        email = self._read_config_file('email')
+        password = self._read_config_file('password')
         # Locators
         log_in_link_selector = 'nav.auxiliary-actions > ul a.sign-in-link, div.c-group.links :nth-child(2) > a'
         email_input_selector = 'input[type=email]'
@@ -135,11 +164,11 @@ class InstantDefense:
         if len(tabs) > 1:
             self.driver.switch_to.window(tabs[1])
         email_input = self._wait_until(email_input_selector)
-        email_input.send_keys(OUTLOOK_EMAIL)
+        email_input.send_keys(email)
         next_button = self._wait_until(next_button_selector)
         next_button.click()
         password_input = self._wait_until(password_input_selector)
-        password_input.send_keys(OUTLOOK_PASSWORD)
+        password_input.send_keys(password)
         sign_in_button = self._wait_until(sign_in_button_selector)
         sign_in_button.click()
         mail = self._wait_until(mails_selector)
@@ -159,16 +188,23 @@ class InstantDefense:
             data.append(data_item)
         self._export_to_csv(data, 'OCSDemail')
         return data
-    
 
     # Public methods
     def ocsd_submit_read_mail(self):
+        """Submits OCSD form and read data from a IMAP account"""
         self._ocsd_submit()
-        email_body = self._read_last_email()
-        return email_body
+        email_body = self._get_last_imap_emails()
+        soup = BeautifulSoup(email_body)
+        data = self._bs4_get_data_from_table(soup)
+        self._export_to_csv(data, 'OCSD')
+        return data
 
     def hcdistrictclerk_login(self):
         """Just a login method"""
+        hcdistrictclerk_email = self._read_config_file('hcdistrictclerk_email')
+        hcdistrictclerk_password = self._read_config_file(
+            'hcdistrictclerk_password'
+        )
         self.driver.get(self.web_pages['hcdistrictclerk'])
         # Locators
         form_frame_locator = '#ctl00_ctl00_ctl00_TopLoginIFrame1_iFrameContent2'
@@ -180,8 +216,8 @@ class InstantDefense:
         email_input = self._wait_until(email_input_selector)
         password_input = self._wait_until(password_input_selector)
         login_button = self._wait_until(login_button_selector)
-        email_input.send_keys(HCDISTRICTCLERK_EMAIL)
-        password_input.send_keys(HCDISTRICTCLERK_PASSWORD)
+        email_input.send_keys(hcdistrictclerk_email)
+        password_input.send_keys(hcdistrictclerk_password)
         login_button.click()
 
     def dallascounty_bookin_search(self):
@@ -266,7 +302,7 @@ class InstantDefense:
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense()
+    instant_defense = InstantDefense(True)
     try:
         execution = str(sys.argv[1])
     except:
