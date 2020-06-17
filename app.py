@@ -2,8 +2,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from datetime import timezone
 from imap_tools import MailBox, Q
+from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
 import imaplib, email
 import json
@@ -21,7 +21,8 @@ class InstantDefense:
             'hcdistrictclerk': 'https://www.hcdistrictclerk.com/edocs/public/search.aspx?newsuits=1',
             'outlook': 'https://outlook.live.com/mail/0/',
             'dallascounty': 'https://www.dallascounty.org/jaillookup/search.jsp',
-            'sbcounty': 'http://web.sbcounty.gov/sheriff/bookingsearch/bookingsearch.aspx'
+            'sbcounty': 'http://web.sbcounty.gov/sheriff/bookingsearch/bookingsearch.aspx',
+            'tylerpaw': 'http://tylerpaw.co.fort-bend.tx.us/PublicAccess/default.aspx'
         }
         if debug:
             # This will open the browser, just for debugging
@@ -188,6 +189,46 @@ class InstantDefense:
         self._export_to_csv(data, 'OCSDemail')
         return data
 
+    def _tylerpaw_get_case_details(self):
+        """Gets the case details"""
+        # locators
+        name_locator = 'th#PIr11'
+        address_locator = "(//td[contains(@headers, 'PIr01') and contains(@headers, 'PIr11')])[3]"
+        attorneys_locator = "(//td[contains(@headers, 'PIr01') and contains(@headers, 'PIr11')])[2]/b"
+        crime_info_locator = "/html/body/table[5]/tbody/tr[2]/td[2]"
+        has_arraignment_locator = "//*[contains(text(), 'Arraignment')]"
+        # scrape
+        data = {}
+        name = self._wait_until(name_locator)
+        address = self._wait_until(address_locator, by=By.XPATH)
+        try:
+            attorneys = self._wait_until(attorneys_locator, by=By.XPATH, wait_time=0.5)
+        except:
+            attorneys = False
+        crime_info = self._wait_until(crime_info_locator, by=By.XPATH)
+        try:
+            has_arraignment =  self._wait_until(
+                has_arraignment_locator,
+                by=By.XPATH,
+                wait_time=0.5
+            )
+        except:
+            has_arraignment = False
+        data['name'] = name.text
+        data['address'] = address.text
+        data['attorneys'] = attorneys.text if attorneys else "No Attorneys"
+        data['crime_info'] = crime_info.text
+        data['has_arraignment'] = True if has_arraignment else False
+        self.driver.close()
+        self.driver.switch_to.window(self.driver.window_handles[0])
+        return data
+
+    def _open_link_new_tab(self, link):
+        """Opens a new tab and navigates to the given link"""
+        self.driver.execute_script("window.open('');")
+        self.driver.switch_to.window(self.driver.window_handles[1])
+        self.driver.get(link)
+
     # Public methods
     def ocsd_submit_read_mail(self):
         """Submits OCSD form and read data from a IMAP account"""
@@ -296,13 +337,55 @@ class InstantDefense:
         self._export_to_csv(output_names_ages, 'sbcounty')
         return output_names_ages
 
+    def tylerpaw_search(self):
+        """Returns name, address, Attorneys, crime information, 
+        and whether or not the page contains the word 'Arraignment' from
+        taylerpaw page"""
+        self.driver.get(self.web_pages['tylerpaw'])
+        # Locators
+        datefiled_option_locator = 'input#DateFiled'
+        datefiled_after_locator = 'input#DateFiledOnAfter'
+        datefiled_before_locator = 'input#DateFiledOnBefore'
+        search_button_locator = 'input#SearchSubmit'
+        criminal_record_link_locator = "//a[contains(text(),'Criminal')]"
+        case_numbers_links_locator = 'tr > td >a'
+        # Search
+        today = datetime.date.today().strftime('%m/%d/%Y')
+        # Today - one day = yesterday
+        yesterday = datetime.date.today() - datetime.timedelta(days=1)
+        yesterday = yesterday.strftime('%m/%d/%Y')
+        criminal_record_link = self._wait_until(
+            criminal_record_link_locator,
+            by=By.XPATH
+        )
+        criminal_record_link.click()
+        datefiled_option = self._wait_until(datefiled_option_locator)
+        datefiled_after = self._wait_until(datefiled_after_locator)
+        datefiled_before = self._wait_until(datefiled_before_locator)
+        search_button = self._wait_until(search_button_locator)
+        datefiled_option.click()
+        datefiled_after.send_keys(yesterday)
+        datefiled_before.send_keys(yesterday)
+        search_button.click()
+        case_numbers_links = self._wait_until(
+            case_numbers_links_locator,
+            until=EC.presence_of_all_elements_located
+        )
+        data = []
+        for link_element in case_numbers_links:
+            link = link_element.get_attribute('href')
+            self._open_link_new_tab(link)
+            details = self._tylerpaw_get_case_details()
+            data.append(details)
+        self._export_to_csv(data, 'taylerpaw')
+
     def quit_driver(self):
         """This closes chrome instance"""
         self.driver.quit()
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense()
+    instant_defense = InstantDefense(debug=True)
     try:
         execution = str(sys.argv[1])
     except:
@@ -316,16 +399,19 @@ if __name__ == '__main__':
         print(instant_defense.dallascounty_bookin_search())
     elif execution == 'sbcounty':
         print(instant_defense.sbcounty_booking_search())
+    elif execution == 'tylerpaw':
+        print(instant_defense.tylerpaw_search())
     elif execution == 'all':
-        print('******************')
-        print('Submitting form...')
-        print(instant_defense.ocsd_submit_read_mail())
-        print('Login to hcdistrictclerk.')
-        instant_defense.hcdistrictclerk_login()
-        print('Dallascounty bookin search.')
-        print(instant_defense.dallascounty_bookin_search())
-        print('Sbcounty list search')
-        print(instant_defense.sbcounty_booking_search())
+        # print('******************')
+        # print('Submitting form...')
+        # print(instant_defense.ocsd_submit_read_mail())
+        # print('Login to hcdistrictclerk.')
+        # instant_defense.hcdistrictclerk_login()
+        # print('Dallascounty bookin search.')
+        # print(instant_defense.dallascounty_bookin_search())
+        # print('Sbcounty list search')
+        # print(instant_defense.sbcounty_booking_search())
+        print(instant_defense.tylerpaw_search())
     else:
         print('Invalid method, see the valid ones:')
         print('ocsd')
