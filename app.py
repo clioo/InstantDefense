@@ -195,7 +195,7 @@ class InstantDefense:
         name_locator = 'th#PIr11'
         address_locator = "(//td[contains(@headers, 'PIr01') and contains(@headers, 'PIr11')])[3]"
         attorneys_locator = "(//td[contains(@headers, 'PIr01') and contains(@headers, 'PIr11')])[2]/b"
-        crime_info_locator = "/html/body/table[5]/tbody/tr[2]/td[2]"
+        crime_info_locator = "//*[contains(text(), 'Charges')]/ancestor::table//tr[2]/td[2]"
         has_arraignment_locator = "//*[contains(text(), 'Arraignment')]"
         # scrape
         data = {}
@@ -378,6 +378,7 @@ class InstantDefense:
             details = self._tylerpaw_get_case_details()
             data.append(details)
         self._export_to_csv(data, 'taylerpaw')
+        return data
 
     def quit_driver(self):
         """This closes chrome instance"""
@@ -385,7 +386,7 @@ class InstantDefense:
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense(debug=True)
+    instant_defense = InstantDefense()
     try:
         execution = str(sys.argv[1])
     except:
