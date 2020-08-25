@@ -11,6 +11,8 @@ import sys
 import time
 import csv
 import datetime
+import re
+import requests
 
 
 class InstantDefense:
@@ -22,7 +24,8 @@ class InstantDefense:
             'outlook': 'https://outlook.live.com/mail/0/',
             'dallascounty': 'https://www.dallascounty.org/jaillookup/search.jsp',
             'sbcounty': 'http://web.sbcounty.gov/sheriff/bookingsearch/bookingsearch.aspx',
-            'tylerpaw': 'http://tylerpaw.co.fort-bend.tx.us/PublicAccess/default.aspx'
+            'tylerpaw': 'http://tylerpaw.co.fort-bend.tx.us/PublicAccess/default.aspx',
+            'azbar': 'https://azbar.legalserviceslink.com/lawyers/search/advanced'
         }
         if debug:
             # This will open the browser, just for debugging
@@ -229,6 +232,44 @@ class InstantDefense:
         self.driver.switch_to.window(self.driver.window_handles[1])
         self.driver.get(link)
 
+
+    def _azbar_contact_info(self, link):
+        #Locators
+        contact_information_locator = "div.jobAppDetailBT div.hlfWidtleft:nth-child(1) p"
+        name_locator = "div.applicantDtl > h3"
+        info = {
+            'name': '',
+            'phone_number': '',
+            'email': '',
+            'web_page': '',
+            'address': ''
+        }
+        # Regular expressions
+        phone_number_regex = r'^[+]*[(]{0,1}[0-9]{1,4}[)]{0,1}[-\s\./0-9]*$'
+        address_regex = r'^(\d+) ?([A-Za-z](?= ))? (.*?) ([^ ]+?) ?((?<= )APT)? ?((?<= )\d*)?$'
+        # Request
+        with requests.Session() as session:
+                page = requests.get(link)
+                soup = BeautifulSoup(page.content)
+                name_element = soup.select_one(name_locator)
+                name = name_element.getText()
+                contact_info_element = soup.select_one(contact_information_locator)
+                contact_info = contact_info_element.getText()
+                contact_info = contact_info.replace('\t', '')
+                splitted_info = contact_info.split('\n')
+                info['name'] = name.strip()
+                for single_info in splitted_info:
+                    single_info = single_info.strip()
+                    if 'http' in single_info:
+                        info['web_page'] = single_info
+                    elif re.search(phone_number_regex, single_info):
+                        info['phone_number'] = single_info
+                    elif '@' in single_info:
+                        info['email'] = single_info
+                    elif re.search(address_regex, single_info):
+                        info['address'] = single_info
+        return info
+
     # Public methods
     def ocsd_submit_read_mail(self):
         """Submits OCSD form and read data from a IMAP account"""
@@ -380,6 +421,45 @@ class InstantDefense:
         self._export_to_csv(data, 'taylerpaw')
         return data
 
+    def azbar_search(self):
+        self.driver.get(self.web_pages['azbar'])
+        # Locators
+        legal_need_input_locator = '#UserKeyword'
+        county_option_locator = '#Maricopa'
+        search_button_locator = "(//input[@class='green_btn'])[2]"
+        next_button_locator = "//a[contains(text(), 'Next')]"
+        last_page_locator = "//a[contains(text(), 'Last') and @class='current_page']"
+        profile_description_locator = "section.profileDes"
+        attorney_info_locator = 'p.oldRecord'
+        # Fill search
+        legal_need_input = self._wait_until(legal_need_input_locator)
+        legal_need_input.send_keys('criminal defense')
+        county_option = self._wait_until(county_option_locator)
+        county_option.click()
+        search_button = self._wait_until(search_button_locator, By.XPATH)
+        search_button.click()
+        last_page = False
+        data = []
+        links = []
+        # Get all links
+        while (last_page == False):
+            attornies = self.driver.find_elements_by_css_selector(profile_description_locator)
+            for attorney in attornies:
+                name_link = attorney.find_element_by_css_selector('h3 > a')
+                link = name_link.get_attribute('href')
+                info = self._azbar_contact_info(link)
+                data.append(info)
+            # Hit next button until the end
+            try:
+                self.driver.find_element_by_xpath(last_page_locator)
+                last_page = True
+            except:
+                next_button = self._wait_until(next_button_locator, By.XPATH)
+                next_button.click()
+            print(f'{len(data)} attorneys crawled.')
+            self._export_to_csv(data, 'azbar')
+        return data
+
     def quit_driver(self):
         """This closes chrome instance"""
         self.driver.quit()
@@ -402,17 +482,20 @@ if __name__ == '__main__':
         print(instant_defense.sbcounty_booking_search())
     elif execution == 'tylerpaw':
         print(instant_defense.tylerpaw_search())
+    elif execution == 'azbar':
+        print(instant_defense.azbar_search())
     elif execution == 'all':
-        # print('******************')
-        # print('Submitting form...')
-        # print(instant_defense.ocsd_submit_read_mail())
-        # print('Login to hcdistrictclerk.')
-        # instant_defense.hcdistrictclerk_login()
-        # print('Dallascounty bookin search.')
-        # print(instant_defense.dallascounty_bookin_search())
-        # print('Sbcounty list search')
-        # print(instant_defense.sbcounty_booking_search())
+        print('******************')
+        print('Submitting form...')
+        print(instant_defense.ocsd_submit_read_mail())
+        print('Login to hcdistrictclerk.')
+        instant_defense.hcdistrictclerk_login()
+        print('Dallascounty bookin search.')
+        print(instant_defense.dallascounty_bookin_search())
+        print('Sbcounty list search')
+        print(instant_defense.sbcounty_booking_search())
         print(instant_defense.tylerpaw_search())
+        print(instant_defense.azbar_search())
     else:
         print('Invalid method, see the valid ones:')
         print('ocsd')
