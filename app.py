@@ -7,6 +7,7 @@ from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
 import imaplib, email
 import json
+import time
 import sys
 import time
 import csv
@@ -25,7 +26,8 @@ class InstantDefense:
             'dallascounty': 'https://www.dallascounty.org/jaillookup/search.jsp',
             'sbcounty': 'http://web.sbcounty.gov/sheriff/bookingsearch/bookingsearch.aspx',
             'tylerpaw': 'http://tylerpaw.co.fort-bend.tx.us/PublicAccess/default.aspx',
-            'azbar': 'https://azbar.legalserviceslink.com/lawyers/search/advanced'
+            'azbar': 'https://azbar.legalserviceslink.com/lawyers/search/advanced',
+            'floridabar': 'https://www.floridabar.org/directories/find-mbr/?lName=&sdx=N&fName=&eligible=Y&deceased=N&firm=&locValue=Miami+dade&locType=T&pracAreas=C16&lawSchool=&services=&langs=&certValue=&pageNumber=1&pageSize=50'
         }
         if debug:
             # This will open the browser, just for debugging
@@ -269,6 +271,123 @@ class InstantDefense:
                     elif re.search(address_regex, single_info):
                         info['address'] = single_info
         return info
+    
+    def _clean_string(self, cad, replace=''):
+        cad = cad.strip()
+        cad = cad.replace('\t', replace)
+        cad = cad.replace('\n', replace)
+        cad = cad.replace(':', replace)
+        return cad
+    
+    def _floridabar_single_info(self, link):
+        headers = {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-encoding': 'gzip, deflate, br',
+            'accept-language': 'en,en-US;q=0.9,es-419;q=0.8,es;q=0.7,es-ES;q=0.6,en-GB;q=0.5',
+            'cache-control': 'max-age=0',
+            'cookie': '__cfduid=d8cda280e8ca10be7cb18ffcbc024fd1d1598332470; PHPSESSID=j1sosdptg77ahcrs8pors730jcht9phm; _gcl_au=1.1.2001199616.1598354074; _ga=GA1.2.765898054.1598354074; _gid=GA1.2.790579873.1598354074; _fbp=fb.1.1598354074442.946758036; cf_clearance=ecf667dc23b7bd5fe37b4aea1e0a2d87fb5846a3-1598335991-0-1z759cc670z6c56a614z86e63aa-150; _dc_gtm_UA-50390294-1=1',
+            'referer': 'https://www.floridabar.org/directories/find-mbr/?lName=&sdx=N&fName=&eligible=Y&deceased=N&firm=&locValue=Miami+dade&locType=T&pracAreas=C16&lawSchool=&services=&langs=&certValue=&pageNumber=1&pageSize=50',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36 Edg/84.0.522.63'
+        }
+        # Locators
+        name_locator = 'h1.full'
+        row_keys_data_locator = 'div#mProfile div.row > div:nth-child(1)'
+        row_values_data_locator = 'div#mProfile div.row > div:nth-child(2)'
+        # Search
+        info = {
+            'Name': '',
+            'Bar Number': '',
+            'Mail Address': '',
+            'Physical Address': '',
+            'Email': '',
+            'Personal Bar URL': '',
+            'County': '',
+            'Circuit': '',
+            'Admitted': '',
+            'Law School': '',
+            'Sections': '',
+            'Practice Areas': '',
+            'Federal Courts': '',
+            'Firm': '',
+            'Firm Size': '',
+            'Firm Position': '',
+        }
+        with requests.Session() as session:
+            page = session.get(link, headers=headers)
+            soup = BeautifulSoup(page.content)
+            rows_keys = soup.select(row_keys_data_locator)
+            rows_values = soup.select(row_values_data_locator)
+            try:
+                info['Name'] = self._clean_string(soup.select_one(name_locator).get_text())
+                for key, value in zip(rows_keys, rows_values):
+                    key = self._clean_string(key.get_text())
+                    cleaned_value = self._clean_string(value.get_text())
+                    if key in info.keys():
+                        info[key] = cleaned_value
+                        if key == 'Email':
+                            email = self._clean_string(
+                                soup.select_one('a.icon-email').get_text()
+                            )
+                            info['Email'] = email
+                        elif key == 'Mail Address' or key == 'Physical Address':
+                            info[key] = self._clean_string(value.get_text(), '|')
+                return info
+            except Exception as e:
+                return
+
+    def _floridabar_single_info_selenium(self, link):
+        # Locators
+        name_locator = 'h1.full'
+        row_keys_data_locator = 'div#mProfile div.row > div:nth-child(1)'
+        row_values_data_locator = 'div#mProfile div.row > div:nth-child(2)'
+        self.driver.get(link)
+        info = {
+            'Name': '',
+            'Bar Number': '',
+            'Mail Address': '',
+            'Physical Address': '',
+            'Email': '',
+            'Personal Bar URL': '',
+            'County': '',
+            'Circuit': '',
+            'Admitted': '',
+            'Law School': '',
+            'Sections': '',
+            'Practice Areas': '',
+            'Federal Courts': '',
+            'Firm': '',
+            'Firm Size': '',
+            'Firm Position': '',
+        }
+        rows_keys = self.driver.find_elements_by_css_selector(row_keys_data_locator)
+        rows_values = self.driver.find_elements_by_css_selector(row_values_data_locator)
+        try:
+            info['Name'] = self._clean_string(self.driver.find_element_by_css_selector(name_locator).text)
+            for key, value in zip(rows_keys, rows_values):
+                key = self._clean_string(key.text)
+                cleaned_value = self._clean_string(value.text)
+                if key in info.keys():
+                    info[key] = cleaned_value
+                    if key == 'Email':
+                        email = self._clean_string(
+                            self.driver.find_element_by_css_selector('a.icon-email').text
+                        )
+                        info['Email'] = email
+                    elif key == 'Mail Address' or key == 'Physical Address':
+                        info[key] = self._clean_string(value.text, '|')
+            return info
+        except Exception as e:
+            self.driver.get(self.web_pages['floridabar'])
+            print("Detected as attack, retrying after waiting 20 seconds")
+            time.sleep(20)
+            info = self._floridabar_single_info(link)
+            return info
+        
 
     # Public methods
     def ocsd_submit_read_mail(self):
@@ -460,6 +579,43 @@ class InstantDefense:
             self._export_to_csv(data, 'azbar')
         return data
 
+    def floridabar_search(self):
+        self.driver.get(self.web_pages['floridabar'])
+        # Locators
+        name_link_locator = 'p.profile-name > a'
+        last_page_locator = 'li.inactive > i.fa-chevron-circle-right'
+        next_button_locator = "a[title='next page']"
+        # Search
+        last_page = False
+        data = []
+        links = []
+        while (not last_page):
+            attornies = self.driver.find_elements_by_css_selector(name_link_locator)
+            for attorney in attornies:
+                link = attorney.get_attribute('href')
+                links.append(link)
+                # info = self._floridabar_single_info(link, headers)
+                # data.append(info)
+            # Hit next button until the end
+            try:
+                self.driver.find_element_by_css_selector(last_page_locator)
+                last_page = True
+            except:
+                next_button = self._wait_until(next_button_locator)
+                next_button.click()
+        for counter, link in enumerate(links):
+            if not counter % 50:
+                print(f'{len(data) + 1} attorneys crawled.')
+                print('Waiting 20 seconds to avoid being detected.')
+                self._export_to_csv(data, 'floridabar')
+                time.sleep(20)
+            print(counter)
+            time.sleep(1)
+            info = self._floridabar_single_info_selenium(link)
+            if info:
+                data.append(info)
+        self._export_to_csv(data, 'floridabar')
+
     def quit_driver(self):
         """This closes chrome instance"""
         self.driver.quit()
@@ -484,6 +640,8 @@ if __name__ == '__main__':
         print(instant_defense.tylerpaw_search())
     elif execution == 'azbar':
         print(instant_defense.azbar_search())
+    elif execution == 'floridabar':
+        print(instant_defense.floridabar_search())
     elif execution == 'all':
         print('******************')
         print('Submitting form...')
@@ -496,6 +654,7 @@ if __name__ == '__main__':
         print(instant_defense.sbcounty_booking_search())
         print(instant_defense.tylerpaw_search())
         print(instant_defense.azbar_search())
+        print(instant_defense.floridabar_search())
     else:
         print('Invalid method, see the valid ones:')
         print('ocsd')
