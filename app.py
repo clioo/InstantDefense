@@ -426,13 +426,24 @@ class InstantDefense:
         Output format (list of dictionaries):
             - [{'name': 'Name 1', 'birth_date': '1969-07-20'}]"""
         self.driver.get(self.web_pages['dallascounty'])
+        dict_data = {
+            'Race': '', 'Sex': '', 'Jail Location': '',
+            'Tank Location': '', 'Bookin Number': '',
+            'Bookin Date': '', 'Bond Amount': '',
+            'Charge': '', 'Warrant Number': '', 'Magistrate': '',
+            'Remark': '',
+        }
+        allowed_heades = set(dict_data.keys())
         # Locators
         bkin_num_input_locator = 'input[name=bookinNumber]'
         search_button_locator = 'form[name=searchByBookin] input[type=submit]'
         wrong_message_locator = 'div.alert-danger'
-        new_search_button_locator = "//input[contains(@value, 'New Search')]"
+        new_search_button_locator = "//a[contains(text(), 'New Jail Lookup')]"
         name_link_locator = 'a.btn-primary'
         birth_date_locator = 'table.table > tbody > tr :nth-child(4)'
+        person_link_locator = 'table.table a.btn'
+        headers_locator = "td[align='right']"
+        values_locator = "td[align='left']"
         # We start searching
         bkin_num_input = self._wait_until(bkin_num_input_locator)
         search_button = self._wait_until(search_button_locator)
@@ -440,7 +451,8 @@ class InstantDefense:
         init_bookin_number = int(self._read_config_file('last_bookin_success',
                                                         '20018914'))
         last_bookin_success = int(init_bookin_number)
-        for i in range(0, 100):
+        for i in range(0, 1000):
+            single_data = dict_data.copy()
             time.sleep(0.5)
             bkin_number = init_bookin_number + i
             # We search for the person by bookin_number value
@@ -457,10 +469,17 @@ class InstantDefense:
                 # Now we store names and birth date in a list
                 name = self._wait_until(name_link_locator).text
                 birth_date = self._wait_until(birth_date_locator).text
-                output_names_birth_dates.append({
-                    'name': name,
-                    'birth_date': birth_date
-                })
+                time.sleep(0.3)
+                person_link = self._wait_until(person_link_locator).click()
+                single_data['Name'] = name
+                single_data['Birth date'] = birth_date
+                self._wait_until(headers_locator)
+                headers = self.driver.find_elements_by_css_selector(headers_locator)
+                values = self.driver.find_elements_by_css_selector(values_locator)
+                for header, value in zip(headers, values):
+                    if header.text in allowed_heades:
+                        single_data[header.text] = value.text
+                output_names_birth_dates.append(single_data)
                 new_search_button = self._wait_until(
                     new_search_button_locator,
                     by=By.XPATH
