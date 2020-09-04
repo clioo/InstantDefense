@@ -28,7 +28,8 @@ class InstantDefense:
             'tylerpaw': 'http://tylerpaw.co.fort-bend.tx.us/PublicAccess/default.aspx',
             'azbar': 'https://azbar.legalserviceslink.com/lawyers/search/advanced',
             'floridabar': 'https://www.floridabar.org/directories/find-mbr/?lName=&sdx=N&fName=&eligible=Y&deceased=N&firm=&locValue=Miami+dade&locType=T&pracAreas=C16&lawSchool=&services=&langs=&certValue=&pageNumber=1&pageSize=50',
-            'osceola': 'https://apps.osceola.org/Apps/CorrectionsReports/Report/Daily/'
+            'osceola': 'https://apps.osceola.org/Apps/CorrectionsReports/Report/Daily/',
+            'seminoleclerk': 'https://courtrecords.seminoleclerk.org/criminal/default.aspx'
         }
         if debug:
             # This will open the browser, just for debugging
@@ -674,6 +675,48 @@ class InstantDefense:
                 break
             self._export_to_csv(data, 'osceola')
             return data
+    
+    def seminoleclerk_search(self):
+        self.driver.get(self.web_pages['seminoleclerk'])
+        # Locators
+        from_date_locator = '#fromDateTxt'
+        to_date_locator = '#toDateTxt'
+        submit_locator = '#search'
+        rows_locator = '#CaseGrid tbody tr'
+
+        to_date = datetime.datetime.now()
+        from_date = to_date - datetime.timedelta(days=7)
+        to_date_text = to_date.strftime('%m/%d/%Y')
+        from_date_text = from_date.strftime('%m/%d/%Y')
+        from_input = self._wait_until(from_date_locator)
+        to_input = self._wait_until(to_date_locator)
+        submit_button = self._wait_until(submit_locator)
+        from_input.send_keys(from_date_text)
+        to_input.send_keys(to_date_text)
+        submit_button.click()
+        self._wait_until('#CaseGrid')
+        rows = self.driver.find_elements(By.CSS_SELECTOR, rows_locator)
+        rows = rows[1:]
+        data = []
+        for row in rows:
+            name = row.find_element(By.ID, 'caseStyle').text
+            type_ = row.find_element(By.CSS_SELECTOR, 'td:nth-child(3)').text
+            dob = row.find_element(By.CSS_SELECTOR, 'td:nth-child(4)').text
+            file_date = row.find_element(By.CSS_SELECTOR, 'td:nth-child(5)').text
+            charges = row.find_element(By.CSS_SELECTOR, 'td:nth-child(6)').text
+            judge = row.find_element(By.CSS_SELECTOR, 'td:nth-child(7)').text
+            status = row.find_element(By.CSS_SELECTOR, 'td:nth-child(8)').text
+            data.append({
+                'Name': name,
+                'Type': type_,
+                'Date of birth': dob,
+                'File date': file_date,
+                'Charges': charges,
+                'Judge': judge,
+                'Status': status,
+            })
+        self._export_to_csv(data, 'seminoleclerk')
+        return data
 
     def quit_driver(self):
         """This closes chrome instance"""
@@ -681,7 +724,7 @@ class InstantDefense:
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense()
+    instant_defense = InstantDefense(True)
     try:
         execution = str(sys.argv[1])
     except:
@@ -703,6 +746,8 @@ if __name__ == '__main__':
         print(instant_defense.floridabar_search())
     elif execution == 'osceola':
         print(instant_defense.osceola_search())
+    elif execution == 'seminoleclerk':
+        print(instant_defense.seminoleclerk_search())
     elif execution == 'all':
         print('******************')
         print('Submitting form...')
