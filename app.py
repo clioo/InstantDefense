@@ -27,7 +27,8 @@ class InstantDefense:
             'sbcounty': 'http://web.sbcounty.gov/sheriff/bookingsearch/bookingsearch.aspx',
             'tylerpaw': 'http://tylerpaw.co.fort-bend.tx.us/PublicAccess/default.aspx',
             'azbar': 'https://azbar.legalserviceslink.com/lawyers/search/advanced',
-            'floridabar': 'https://www.floridabar.org/directories/find-mbr/?lName=&sdx=N&fName=&eligible=Y&deceased=N&firm=&locValue=Miami+dade&locType=T&pracAreas=C16&lawSchool=&services=&langs=&certValue=&pageNumber=1&pageSize=50'
+            'floridabar': 'https://www.floridabar.org/directories/find-mbr/?lName=&sdx=N&fName=&eligible=Y&deceased=N&firm=&locValue=Miami+dade&locType=T&pracAreas=C16&lawSchool=&services=&langs=&certValue=&pageNumber=1&pageSize=50',
+            'osceola': 'https://apps.osceola.org/Apps/CorrectionsReports/Report/Daily/'
         }
         if debug:
             # This will open the browser, just for debugging
@@ -233,7 +234,6 @@ class InstantDefense:
         self.driver.execute_script("window.open('');")
         self.driver.switch_to.window(self.driver.window_handles[1])
         self.driver.get(link)
-
 
     def _azbar_contact_info(self, link):
         #Locators
@@ -635,6 +635,46 @@ class InstantDefense:
                 data.append(info)
         self._export_to_csv(data, 'floridabar')
 
+    def osceola_search(self):
+        # self.driver.get('https://apps.osceola.org/Apps/CorrectionsReports/Report/Daily/2020-09-02')
+        # self.driver.get(self.web_pages['osceola'])
+        # Locators
+        options_locator = '#date option'
+        rows_locator = 'tbody tr'
+
+        with requests.session() as conn:
+            response = conn.get(self.web_pages['osceola'])
+            soup = BeautifulSoup(response.content)
+            options = soup.select(options_locator)
+            dates = []
+            for option in options:
+                date_text = option.get_text()
+                date = datetime.datetime.strptime(date_text, '%m/%d/%Y')
+                formatted_date = datetime.datetime.strftime(date ,'%Y-%m-%d')
+                dates.append(formatted_date)
+            # Iterating dates to get the latest with data
+            data = []
+            for date in dates:
+                response = conn.get(self.web_pages['osceola'] + date)
+                soup = BeautifulSoup(response.content)
+                rows = soup.select(rows_locator)
+                if not rows:
+                    continue
+                for row in rows:
+                    name = row.select_one('a.arrest-name').get_text()
+                    dob = row.select_one('span.arrest-dob').get_text().replace('Birthdate: ', '')
+                    statute = row.select_one('td.arrest-statute').get_text()
+                    statute = self._clean_string(statute)
+                    data.append({
+                        'Name': name,
+                        'Statute': statute,
+                        'Date of birth': dob
+                    })
+                # Breaking, just need the last date successful
+                break
+            self._export_to_csv(data, 'osceola')
+            return data
+
     def quit_driver(self):
         """This closes chrome instance"""
         self.driver.quit()
@@ -661,6 +701,8 @@ if __name__ == '__main__':
         print(instant_defense.azbar_search())
     elif execution == 'floridabar':
         print(instant_defense.floridabar_search())
+    elif execution == 'osceola':
+        print(instant_defense.osceola_search())
     elif execution == 'all':
         print('******************')
         print('Submitting form...')
@@ -674,6 +716,7 @@ if __name__ == '__main__':
         print(instant_defense.tylerpaw_search())
         print(instant_defense.azbar_search())
         print(instant_defense.floridabar_search())
+        print(instant_defense.osceola_search())
     else:
         print('Invalid method, see the valid ones:')
         print('ocsd')
