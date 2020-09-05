@@ -5,6 +5,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from imap_tools import MailBox, Q
 from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
+from contextlib import closing
+from tika import parser
+import shutil
+import urllib.request as request
+import os
+import re
 import imaplib, email
 import json
 import time
@@ -29,7 +35,8 @@ class InstantDefense:
             'azbar': 'https://azbar.legalserviceslink.com/lawyers/search/advanced',
             'floridabar': 'https://www.floridabar.org/directories/find-mbr/?lName=&sdx=N&fName=&eligible=Y&deceased=N&firm=&locValue=Miami+dade&locType=T&pracAreas=C16&lawSchool=&services=&langs=&certValue=&pageNumber=1&pageSize=50',
             'osceola': 'https://apps.osceola.org/Apps/CorrectionsReports/Report/Daily/',
-            'seminoleclerk': 'https://courtrecords.seminoleclerk.org/criminal/default.aspx'
+            'seminoleclerk': 'https://courtrecords.seminoleclerk.org/criminal/default.aspx',
+            'ocfl': 'https://apps.ocfl.net/bailbond/',
         }
         if debug:
             # This will open the browser, just for debugging
@@ -452,7 +459,7 @@ class InstantDefense:
         init_bookin_number = int(self._read_config_file('last_bookin_success',
                                                         '20018914'))
         last_bookin_success = int(init_bookin_number)
-        for i in range(0, 1000):
+        for i in range(0, 400):
             single_data = dict_data.copy()
             time.sleep(0.5)
             bkin_number = init_bookin_number + i
@@ -718,13 +725,77 @@ class InstantDefense:
         self._export_to_csv(data, 'seminoleclerk')
         return data
 
+    def ocfl_search(self):
+        with requests.session() as conn:
+            response = conn.get(self.web_pages['ocfl'])
+            soup = BeautifulSoup(response.content)
+            link = soup.select_one("a:contains('Daily Booking List')").get('href')
+            # response = conn.get(link, stream=True)
+            # response.raise_for_status()
+            file_name = 'results/ocfl_pdf_file.pdf'
+            if os.path.exists(file_name):
+                os.remove(file_name)
+            with closing(request.urlopen(link)) as r:
+                with open(file_name, 'wb') as f:
+                    shutil.copyfileobj(r, f)
+            raw = parser.from_file(file_name)
+            string_data = raw['content']
+            pages = string_data.split('\n\n\n\n')
+            data = []
+            for page in pages:
+                statements = page.split('\n')
+                if len(statements) > 1:
+                    statements = statements[11:]
+                    for i, statement in enumerate(statements):
+                        booking_re = r'(\d{8})'
+                        date_re = r'([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})'
+                        booking_match = re.findall(booking_re, statement)
+                        date_match = re.findall(date_re, statement)
+                        if booking_match:
+                            booking_number = re.findall(
+                                booking_re,
+                                statement
+                            )[0]
+                            try:
+                                release_date = re.findall(
+                                    date_re,
+                                    statement
+                                )[0]
+                                release_date = release_date[0] + '/' + release_date[1] + '/' + release_date[2]
+                            except:
+                                release_date = 'Not available'
+                            name = statement.split(booking_number)[0]
+                            name = name[:-9]
+                            place = statements[i + 2]
+                            age = statements[i + 4]
+                            race = statements[i + 6]
+                            case = statements[i + 8].split(' ')[2]
+                            county = statements[i + 8].split(' ')
+                            county = ' '.join(county[3:])
+                            statute = statements[i + 10]
+                            data.append({
+                                'booking_number': booking_number,
+                                'release_date': release_date,
+                                'name': name,
+                                'place': place,
+                                'age': age,
+                                'race': race,
+                                'case': case,
+                                'county': county,
+                                'statute': statute
+                            })
+                    
+            self._export_to_csv(data, 'ocfl')
+            return data
+        pass
+
     def quit_driver(self):
         """This closes chrome instance"""
         self.driver.quit()
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense(True)
+    instant_defense = InstantDefense()
     try:
         execution = str(sys.argv[1])
     except:
@@ -748,6 +819,8 @@ if __name__ == '__main__':
         print(instant_defense.osceola_search())
     elif execution == 'seminoleclerk':
         print(instant_defense.seminoleclerk_search())
+    elif execution == 'ocfl':
+        print(instant_defense.ocfl_search())
     elif execution == 'all':
         print('******************')
         print('Submitting form...')
@@ -762,6 +835,7 @@ if __name__ == '__main__':
         print(instant_defense.azbar_search())
         print(instant_defense.floridabar_search())
         print(instant_defense.osceola_search())
+        print(instant_defense.ocfl_search())
     else:
         print('Invalid method, see the valid ones:')
         print('ocsd')
