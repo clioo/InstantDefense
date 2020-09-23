@@ -569,7 +569,7 @@ class InstantDefense:
             last_success = init_bookin_number
             base_url = 'https://www.dallascounty.org/jaillookup/'
             data = []
-            for i in range(0,30):
+            for i in range(0,400):
                 try:
                     single_data = model.copy()
                     bookin_number = init_bookin_number + i + 1
