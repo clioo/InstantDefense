@@ -22,9 +22,12 @@ import re
 import requests
 
 
+PROXY = { 'https' : 'https://instantdefense-country-US:6ee10e-6854eb-107264-6e0f88-b9c453@premium.residential.proxyrack.net:10000'} 
+
+
 class InstantDefense:
 
-    def __init__(self, debug=False):
+    def __init__(self, debug=False, proxy=False):
         self.web_pages = {
             'ocsd': 'http://ws.ocsd.org/ArrestLog/ArrestLogMain.aspx',
             'hcdistrictclerk': 'https://www.hcdistrictclerk.com/edocs/public/search.aspx?newsuits=1',
@@ -38,21 +41,35 @@ class InstantDefense:
             'seminoleclerk': 'https://courtrecords.seminoleclerk.org/criminal/default.aspx',
             'ocfl': 'https://apps.ocfl.net/bailbond/',
         }
+        options = webdriver.ChromeOptions()
+        options_wire = {
+                'proxy': {
+                'http': 'http://instantdefense-country-US:6ee10e-6854eb-107264-6e0f88-b9c453@premium.residential.proxyrack.net:10000', 
+                'https': 'https://instantdefense-country-US:6ee10e-6854eb-107264-6e0f88-b9c453@premium.residential.proxyrack.net:10000', 
+                'no_proxy': 'localhost,127.0.0.1' # excludes
+            }
+        }
         if debug:
             # This will open the browser, just for debugging
             # purposes
-            self.driver = webdriver.Chrome()
+            if proxy:
+                self.driver = webdriver.Chrome(seleniumwire_options=options_wire)
+            else:
+                self.driver = webdriver.Chrome()
             self.driver.maximize_window()
         else:
             # Open the browser in the background, this is used
             # in servers that have no GUI
-            options = webdriver.ChromeOptions()
             options.add_argument('--headless')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--window-size=1920x1080')
-            self.driver = webdriver.Chrome(options=options)
+            if proxy:
+                self.driver = webdriver.Chrome(options=options, seleniumwire_options=options_wire)
+            else:
+                self.driver = webdriver.Chrome(options=options)
  
+
     # Private methods
     def _export_to_csv(self, data, file_name):
         """Data must be an array of dictionaries so it can export it"""
@@ -285,6 +302,7 @@ class InstantDefense:
         cad = cad.replace('\t', replace)
         cad = cad.replace('\n', replace)
         cad = cad.replace(':', replace)
+        cad = cad.replace('\xa0', replace)
         return cad
     
     def _floridabar_single_info(self, link):
@@ -396,6 +414,28 @@ class InstantDefense:
             info = self._floridabar_single_info(link)
             return info
         
+    def _seminoleclerk_get_extradata(self, link, headers, cookies):
+        address_locator = 'span#lbl_Contact > table tr td:nth-child(2)'
+        party_btn_locator = '#party_pan'
+        has_attrny_locator = '#lbl_attyDetails'
+        with requests.session() as conn:
+            extradata = {}
+            for cookie in cookies:
+                conn.cookies.set(cookie.get('name'), cookie.get('value'))
+            response = conn.get(link, headers=headers)
+            soup = BeautifulSoup(response.content)
+            addresses = soup.select(address_locator)
+            addresses = [self._clean_string(addr.get_text(), ' ') for addr in addresses]
+            has_attrny = soup.select_one(has_attrny_locator)
+            try:
+                extradata['address'] = ' '.join(addresses)
+                has_attrny = has_attrny.select('tr')
+                has_attrny = has_attrny[1].select('td')
+                has_attrny = has_attrny[1]
+                extradata['has_attrny'] = has_attrny.get_text()
+            except:
+                pass
+            return extradata
 
     # Public methods
     def ocsd_submit_read_mail(self):
@@ -463,6 +503,9 @@ class InstantDefense:
             single_data = dict_data.copy()
             time.sleep(0.5)
             bkin_number = init_bookin_number + i
+            print(bkin_number)
+            if bkin_number == 20031557:
+                import pdb; pdb.set_trace()
             # We search for the person by bookin_number value
             is_found =  self._dallascounty_is_query_found(
                 bkin_num_input_locator,
@@ -498,6 +541,66 @@ class InstantDefense:
         self._write_config_file('last_bookin_success', last_bookin_success)
         self._export_to_csv(output_names_birth_dates, 'DallasCounty')
         return output_names_birth_dates
+
+    def dallascounty2_search(self):
+        self.driver.get(self.web_pages['dallascounty'])
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Language': 'en,en-US;q=0.9,es-419;q=0.8,es;q=0.7,es-ES;q=0.6,en-GB;q=0.5',
+            'Host': 'www.dallascounty.org',
+            'Origin': 'https://www.dallascounty.org',
+            'Pragma': 'no-cache',
+            'Referer': 'https://www.dallascounty.org/jaillookup/search.jsp',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36 Edg/85.0.564.51'
+            
+        }
+        with requests.session() as conn:
+            init_bookin_number = int(self._read_config_file('last_bookin_success',
+                                                            '20018914'))
+            model = {'Name': '', 'Race': '', 'Sex': '', 'DOB': '', 'Jail Location': '',
+                               'Bookin Number': '', 'Bookin Date': '', 'Charge': '', 'Warrant Number': '',
+                               'Magistrate': '', 'Remark': '',}
+            allowerd_headers = list(model.keys())
+            last_success = init_bookin_number
+            base_url = 'https://www.dallascounty.org/jaillookup/'
+            data = []
+            for i in range(0,30):
+                try:
+                    single_data = model.copy()
+                    bookin_number = init_bookin_number + i + 1
+                    # 20019111
+                    form_data = {'bookinNumber': bookin_number}
+                    response = conn.post('https://www.dallascounty.org/jaillookup/searchByBookin',
+                                        data=form_data,
+                                        headers=headers,
+                                        proxies=PROXY)
+                    soup = BeautifulSoup(response.content)
+                    link_element = soup.select_one('a.btn.btn-primary')
+                    if link_element:
+                        last_success = bookin_number
+                        link = base_url + link_element.get('href')
+                        response = conn.get(link, proxies=PROXY, headers=headers)
+                        soup = BeautifulSoup(response.content)
+                        meta_cells = soup.select('td[align=right]')
+                        value_cells = soup.select('td[align=left]')
+                        for header, value in zip(meta_cells, value_cells):
+                            header = self._clean_string(header.get_text())
+                            value = self._clean_string(value.get_text())
+                            if header in allowerd_headers:
+                                single_data[header] = value
+                        data.append(single_data)
+                except Exception:
+                    print('sleeping')
+                    time.sleep(1)
+                    pass
+            self._write_config_file('last_bookin_success', last_success)
+            self._export_to_csv(data, 'DallasCounty')
+            return data
 
     def sbcounty_booking_search(self):
         """Returns name and ages in this format:
@@ -690,6 +793,7 @@ class InstantDefense:
         to_date_locator = '#toDateTxt'
         submit_locator = '#search'
         rows_locator = '#CaseGrid tbody tr'
+        link_locator = 'a#CaseNum'
 
         to_date = datetime.datetime.now()
         from_date = to_date - datetime.timedelta(days=7)
@@ -713,7 +817,8 @@ class InstantDefense:
             charges = row.find_element(By.CSS_SELECTOR, 'td:nth-child(6)').text
             judge = row.find_element(By.CSS_SELECTOR, 'td:nth-child(7)').text
             status = row.find_element(By.CSS_SELECTOR, 'td:nth-child(8)').text
-            data.append({
+            link = row.find_element(By.CSS_SELECTOR, link_locator).get_attribute('href')
+            dict_data = {
                 'Name': name,
                 'Type': type_,
                 'Date of birth': dob,
@@ -721,7 +826,30 @@ class InstantDefense:
                 'Charges': charges,
                 'Judge': judge,
                 'Status': status,
-            })
+                'link': link
+            }
+            data.append(dict_data)
+        cookies = self.driver.get_cookies()
+        for single_data in data:
+            headers = {
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+                'accept-encoding': 'gzip, deflate, br',
+                'accept-language': 'en,en-US;q=0.9,es-419;q=0.8,es;q=0.7,es-ES;q=0.6,en-GB;q=0.5',
+                'cache-control': 'no-cache',
+                # 'cookie': '.ASPXANONYMOUS=UjcKvWIUUOLBPD0rO6O0TI9BplyRgNay6Yi932IP3Q_tiwXwtUcuH8lhMfYsIU-wa01HGDgB706ahNzkixiG2VTmuEADAvyPRbH5jeLinzfB9o3mCXO8bOFjWOdNuCuy0; ASP.NET_SessionId=tetxxdcvkw4yzkjjpkgq55pw; __AntiXsrfToken=39a7adadea6f4c948258afbdc28f8329',
+                'pragma': 'no-cache',
+                'referer': 'https://courtrecords.seminoleclerk.org/criminal/default.aspx',
+                'sec-fetch-dest': 'document',
+                'sec-fetch-mode': 'navigate',
+                'sec-fetch-site': 'same-origin',
+                'sec-fetch-user': '?1',
+                'upgrade-insecure-requests': '1',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36 Edg/84.0.522.63'
+            }
+            extra_data = self._seminoleclerk_get_extradata(single_data['link'], headers, cookies)
+            single_data['Defendant Address'] = extra_data.get('address', 'Not available')
+            single_data.pop('link')
+            single_data['Has attorney'] = extra_data.get('has_attrny', 'NO ATTORNEY')
         self._export_to_csv(data, 'seminoleclerk')
         return data
 
@@ -764,30 +892,81 @@ class InstantDefense:
                                 release_date = release_date[0] + '/' + release_date[1] + '/' + release_date[2]
                             except:
                                 release_date = 'Not available'
-                            name = statement.split(booking_number)[0]
-                            name = name[:-9]
-                            place = statements[i + 2]
-                            age = statements[i + 4]
-                            race = statements[i + 6]
-                            case = statements[i + 8].split(' ')[2]
-                            county = statements[i + 8].split(' ')
-                            county = ' '.join(county[3:])
-                            statute = statements[i + 10]
-                            data.append({
-                                'booking_number': booking_number,
-                                'release_date': release_date,
-                                'name': name,
-                                'place': place,
-                                'age': age,
-                                'race': race,
-                                'case': case,
-                                'county': county,
-                                'statute': statute
-                            })
+                            try:
+                                name = statement.split(booking_number)[0]
+                                name = name[:-9]
+                                place = statements[i + 2]
+                                age = statements[i + 4]
+                                race = statements[i + 6]
+                                case = statements[i + 8].split(' ')[2]
+                                county = statements[i + 8].split(' ')
+                                county = ' '.join(county[3:])
+                                statute = statements[i + 10]
+                                data.append({
+                                    'booking_number': booking_number,
+                                    'release_date': release_date,
+                                    'name': name,
+                                    'place': place,
+                                    'age': age,
+                                    'race': race,
+                                    'case': case,
+                                    'county': county,
+                                    'statute': statute
+                                })
+                            except:
+                                pass
                     
             self._export_to_csv(data, 'ocfl')
             return data
         pass
+
+    def jimspub_search(self):
+        init_bookin_number = int(self._read_config_file('jimspub_number',
+                                                        '202002545'))
+        url = 'http://jimspub.riversidesheriff.org/cgi-bin/iisinfo.acu?bkno={0}'
+        data = []
+        for i in range(0, 200):
+            single_data = {}
+            url_bkin = url.format(init_bookin_number)
+            self.driver.get(url_bkin)
+            try:
+                time.sleep(1)
+                cells = self.driver.find_elements(By.CSS_SELECTOR, 'tbody td')
+                single_data['booking_number'] = str(init_bookin_number)
+                single_data['name'] = cells[6].text
+                if cells[6].text == '':
+                    raise
+                single_data['sex'] = cells[10].text
+                single_data['race'] = cells[11].text
+                single_data['dob'] = cells[12].text
+                single_data['age'] = cells[18].text
+                single_data['hair'] = cells[19].text
+                single_data['eyes'] = cells[20].text
+                single_data['height'] = cells[21].text
+                single_data['weight'] = cells[22].text
+                single_data['arrest_date'] = cells[27].text
+                single_data['arresting_agency'] = cells[29].text
+                single_data['arresting_location'] = cells[30].text
+                single_data['booked_date'] = cells[33].text
+                single_data['case_no'] = cells[34].text
+                single_data['current_facility'] = cells[39].text
+                single_data['release_date'] = cells[48].text
+                charges_text = cells[50].text
+                charges_text = charges_text.replace('Charge Type', '')
+                charges_text = charges_text.replace('Description', '')
+                charges_text = charges_text.replace('Bail', '')
+                charges_text = charges_text.replace('Disposition', '')
+                charges_text = charges_text.replace('Type', '')
+                charges_text = charges_text.replace('Booking', '')
+                charges_text = self._clean_string(charges_text, ' | ')
+                single_data['charges'] = charges_text
+                data.append(single_data)
+            except:
+                pass
+            init_bookin_number += 1
+        self._write_config_file('jimspub_number', init_bookin_number)
+        self._export_to_csv(data, 'jimspub')
+        return data
 
     def quit_driver(self):
         """This closes chrome instance"""
@@ -806,7 +985,7 @@ if __name__ == '__main__':
     elif execution == 'hcdistrictclerk':
         instant_defense.hcdistrictclerk_login()
     elif execution == 'dallascounty':
-        print(instant_defense.dallascounty_bookin_search())
+        print(instant_defense.dallascounty2_search())
     elif execution == 'sbcounty':
         print(instant_defense.sbcounty_booking_search())
     elif execution == 'tylerpaw':
@@ -821,6 +1000,8 @@ if __name__ == '__main__':
         print(instant_defense.seminoleclerk_search())
     elif execution == 'ocfl':
         print(instant_defense.ocfl_search())
+    elif execution == 'jimspub':
+        print(instant_defense.jimspub_search())
     elif execution == 'all':
         print('******************')
         print('Submitting form...')
