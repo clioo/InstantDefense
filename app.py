@@ -928,9 +928,9 @@ class InstantDefense:
         for i in range(0, 200):
             single_data = {}
             url_bkin = url.format(init_bookin_number)
-            self.driver.get(url_bkin)
             try:
-                time.sleep(1)
+                self.driver.get(url_bkin)
+                self._wait_until('tbody td')
                 cells = self.driver.find_elements(By.CSS_SELECTOR, 'tbody td')
                 single_data['booking_number'] = str(init_bookin_number)
                 single_data['name'] = cells[6].text
