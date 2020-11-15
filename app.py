@@ -40,6 +40,7 @@ class InstantDefense:
             'osceola': 'https://apps.osceola.org/Apps/CorrectionsReports/Report/Daily/',
             'seminoleclerk': 'https://courtrecords.seminoleclerk.org/criminal/default.aspx',
             'ocfl': 'https://apps.ocfl.net/bailbond/',
+            'fcmcclerk': 'http://www.fcmcclerk.com/case/search'
         }
         options = webdriver.ChromeOptions()
         options_wire = {
@@ -968,6 +969,10 @@ class InstantDefense:
         self._export_to_csv(data, 'jimspub')
         return data
 
+    def fcmcclerk_search(self):
+        url = self.web_pages['fcmcclerk']
+        print('hola mundo')
+
     def quit_driver(self):
         """This closes chrome instance"""
         self.driver.quit()
@@ -1002,6 +1007,8 @@ if __name__ == '__main__':
         print(instant_defense.ocfl_search())
     elif execution == 'jimspub':
         print(instant_defense.jimspub_search())
+    elif execution == 'fcmcclerk':
+        print(instant_defense.fcmcclerk_search())
     elif execution == 'all':
         print('******************')
         print('Submitting form...')
