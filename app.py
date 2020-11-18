@@ -2,6 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from seleniumwire import webdriver as wire
 from imap_tools import MailBox, Q
 from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
@@ -54,7 +55,7 @@ class InstantDefense:
             # This will open the browser, just for debugging
             # purposes
             if proxy:
-                self.driver = webdriver.Chrome(seleniumwire_options=options_wire)
+                self.driver = wire.Chrome(seleniumwire_options=options_wire)
             else:
                 self.driver = webdriver.Chrome()
             self.driver.maximize_window()
@@ -66,7 +67,7 @@ class InstantDefense:
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--window-size=1920x1080')
             if proxy:
-                self.driver = webdriver.Chrome(options=options, seleniumwire_options=options_wire)
+                self.driver = wire.Chrome(options=options, seleniumwire_options=options_wire)
             else:
                 self.driver = webdriver.Chrome(options=options)
  
@@ -971,7 +972,94 @@ class InstantDefense:
 
     def fcmcclerk_search(self):
         url = self.web_pages['fcmcclerk']
-        print('hola mundo')
+        # Locators
+        input_case_number_locator = 'input#case_number'
+        button_search_locator = 'button#search_button_2'
+        submit_button_locator = 'table input[type=submit]'
+        input_token_locator = 'input[name=_token]'
+        data = []
+        model = {
+            'Case number': '',
+            'Full Name': '',
+            'D.O.B.': '',
+            'Address': '',
+            'City': '',
+            'State/Zip': '',
+            'Gender': '',
+            'Height': '',
+            'Hair': '',
+            'Race': '',
+            'Weight': '',
+            'Eyes': '',
+            'Description': '',
+            'Degree of Offense': '',
+            'Decision Code': ''
+        }
+        model_keys = model.keys()
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Language': 'en,en-US;q=0.9,es-419;q=0.8,es;q=0.7,es-ES;q=0.6,en-GB;q=0.5',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Content-Length': '244',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Host': 'www.fcmcclerk.com',
+            'Origin': 'http://www.fcmcclerk.com',
+            'Pragma': 'no-cache',
+            'Referer': 'http://www.fcmcclerk.com/case/search',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 Edg/86.0.622.69'
+        }
+        # body = {
+        #     '_token': 'ddqx66Az3jM8bgdqqC2JRChbubFRo6P1d18Pav3l',
+        #     'case_number': '2020 TR D 136167'
+        # }
+        case_number = self._read_config_file('fcmcclerk_number')
+        words = case_number.split(' ')
+        number = int(words[-1])
+        print(case_number)
+        with requests.session() as conn:
+            for i in range(20):
+                self.driver.get('http://www.fcmcclerk.com/case/search')
+                input_case_number = self._wait_until(input_case_number_locator)
+                button_search = self._wait_until(button_search_locator)
+                input_token = self.driver.find_element(By.CSS_SELECTOR ,input_token_locator)
+                token = input_token.get_attribute('value')
+                input_case_number.send_keys(case_number)
+                button_search.click()
+                self._wait_until('table#datatable')
+                time.sleep(1)
+                cookies = self.driver.get_cookies()
+                for cookie in cookies:
+                    conn.cookies.set(cookie.get('name'), cookie.get('value'))
+                inputs = self.driver.find_elements(By.CSS_SELECTOR, 'div.form-group input[name=case_id]')
+                for i, _input in enumerate(inputs):
+                    row = model.copy()
+                    case_id = _input.get_attribute('value')
+                    form_data = {'_token': token, 'case_id': case_id}
+                    response = conn.post('http://www.fcmcclerk.com/case/view',
+                                            data=form_data,
+                                            headers=headers,
+                                            proxies=PROXY)
+                    soup = BeautifulSoup(response.content)
+                    tds = soup.select('td')
+                    for i, td in enumerate(tds):
+                        current_text = td.get_text()
+                        next_td = tds[i+1:i+2]
+                        next_text = next_td[0].get_text() if next_td else ''
+                        next_text = self._clean_string(next_text)
+                        if current_text in model_keys:
+                            row[current_text] = next_text
+                    row['Case number'] = case_number
+                    data.append(row)
+                    # *************
+                number += 1
+                case_number = ' '.join(words[0:len(words) - 1])
+                case_number += ' ' + str(number)
+                time.sleep(60)
+            self._export_to_csv(data, 'fcmcclerk')
+            self._write_config_file('fcmcclerk_number', case_number)
 
     def quit_driver(self):
         """This closes chrome instance"""
@@ -979,7 +1067,7 @@ class InstantDefense:
 
 
 if __name__ == '__main__':
-    instant_defense = InstantDefense()
+    instant_defense = InstantDefense(True, False)
     try:
         execution = str(sys.argv[1])
     except:
